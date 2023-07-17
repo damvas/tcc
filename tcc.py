@@ -17,6 +17,11 @@ chunk_size = 10000000
 exp = process_csv('exp_2022.csv', chunk_size)
 exp_mun = process_csv('exp_mun_2022.csv', chunk_size)
 
+df = bz2[(bz2['ID IBGE'] == 4205407) & (bz2['Exportação (US$)'] != 0)].copy().reset_index(drop=True)
+hs_dct = bz2[bz2['ID HS'].apply(lambda x:len(str(x))) < 3][['ID HS', 'HS']]
+hs_dct = hs_dct.drop_duplicates().sort_values('ID HS').reset_index(drop=True)
+hs_df = df[df['ID HS'].apply(lambda x:len(str(x))) >= 5]
+
 dct_urf = process_csv('dct_urf.csv', 100, encoding='latin-1')
 dct_urf['NO_URF'] = dct_urf['NO_URF'].str.split(' - ').str[-1].str.replace('IRF ','')
 
