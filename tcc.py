@@ -8,6 +8,17 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
 
+def get_pivot_bd(dfs):
+    piv_bd = pd.DataFrame()
+    for df in dfs:
+        piv = pivot_df(df, df.name)
+        if piv_bd.empty:
+            piv_bd = piv
+        else:
+            piv_bd = pd.merge(piv_bd, piv, 'left', ['dt', 'cd_uf'])
+    piv_bd.to_csv(r"C:\Users\danie\Desktop\TCC\Dados\pivot_bd.csv")
+    return piv_bd
+
 def process_csv(file_path, chunk_size, encoding='utf-8'):
     df_list = []
     reader = pd.read_csv(file_path, sep=';', chunksize=chunk_size, encoding = encoding)
@@ -59,6 +70,7 @@ def get_gini():
     df.to_excel(r"C:\Users\danie\Desktop\TCC\Dados\sidra_gini.xlsx", index=False)
     df[df['dt'].dt.year == 2012].to_excel(rf"C:\Users\danie\Desktop\TCC\Dados\sidra_gini_12.xlsx",index=False)
     df[df['dt'].dt.year == 2022].to_excel(rf"C:\Users\danie\Desktop\TCC\Dados\sidra_gini_22.xlsx",index=False)
+    df.name = 'gini'
     return df
 
 def get_comex(exp_or_imp):
@@ -77,6 +89,7 @@ def get_comex(exp_or_imp):
     df.to_excel(rf"C:\Users\danie\Desktop\TCC\Dados\ipeadata_{exp_or_imp}.xlsx",index=False)
     df[df['dt'].dt.year == 2012].to_excel(rf"C:\Users\danie\Desktop\TCC\Dados\ipeadata_{exp_or_imp}_12.xlsx",index=False)
     df[df['dt'].dt.year == 2022].to_excel(rf"C:\Users\danie\Desktop\TCC\Dados\ipeadata_{exp_or_imp}_22.xlsx",index=False)
+    df.name = exp_or_imp
     return df
 
 def pivot_df(df: pd.DataFrame, df_name: str) -> pd.DataFrame:
@@ -84,18 +97,6 @@ def pivot_df(df: pd.DataFrame, df_name: str) -> pd.DataFrame:
     df['cd_uf'] = df['cd_uf'].astype(str)
     piv_df = df[['dt','cd_uf',df_name]]
     return piv_df
-
-def get_pivot_bd(exp, imp, gini, eci):
-    piv_exp = pivot_df(exp, 'exp')
-    piv_imp = pivot_df(imp, 'imp')
-    piv_gini = pivot_df(gini, 'gini')
-    piv_eci = pivot_df(eci, 'eci')
-    piv_bd = pd.merge(piv_exp, piv_imp, 'left', ['dt','cd_uf'])
-    piv_bd = pd.merge(piv_bd, piv_gini, 'left', ['dt','cd_uf'])
-    piv_bd = pd.merge(piv_bd, piv_eci, on=['dt','cd_uf'], how='left')
-    # piv_bd = piv_bd.query("dt >= '2012-01-01'").reset_index(drop=True)
-    piv_bd.to_excel(r"C:\Users\danie\Desktop\TCC\Dados\pivot_bd.xlsx", index=False)
-    return piv_bd
 
 def get_secex():
     secex_dir = r'C:\Users\danie\Desktop\TCC\Dados\SECEX\Dados'
@@ -176,4 +177,49 @@ def get_dataviva():
                     'ID IBGE': 'cd_uf',
                     'Complexidade Econômica': 'value'})
     df['dt'] = pd.to_datetime(df['dt'], format = '%Y')
+    df['value'] = df['value'].astype(float)
+    df.name = 'eci'
+    return df
+
+def download_pop():
+    pop = sidrapy.get_table(7436, # População residente
+                        3, 
+                        'all', 
+                        period = 'all',
+                        variable = 606)
+    pop = pop.iloc[1:, :]
+    pop = pop[['V','D1C','D2C']]
+    pop = pop.rename(columns = {'V': 'value',
+                                'D1C': 'cd_uf',
+                                'D2C': 'dt'})
+    pop['value'] = pop['value'].astype(int)*1000
+    pop['dt'] = pd.to_datetime(pop['dt'], format = '%Y')
+    pop['variable'] = 'pop'
+    pop = pop[['dt','cd_uf','variable','value']]
+    pop.to_csv(r"C:\Users\danie\Desktop\TCC\Dados\SIDRA\pop.csv", index=False)
+
+def get_pop():
+    pop = pd.read_csv(r"C:\Users\danie\Desktop\TCC\Dados\SIDRA\pop.csv")
+    pop['cd_uf'] = pop['cd_uf'].astype(str)
+    pop['dt'] = pd.to_datetime(pop['dt'])
+    pop.name = 'pop'
+    return pop
+
+def download_pib():
+    df = ip.timeseries('PIBPMCE',
+              yearGreaterThan = 1900)
+    df.to_csv(r"C:\Users\danie\Desktop\TCC\Dados\IPEADATA\pib_uf.csv")
+
+def get_pib():
+    df = pd.read_csv(r"C:\Users\danie\Desktop\TCC\Dados\IPEADATA\pib_uf.csv")
+    df.reset_index(inplace=True)
+    df['variable'] = 'pib'
+    df = df[['DATE', 'TERCODIGO', 'variable','VALUE (R$ (mil))']]
+    df.columns = ['dt', 'cd_uf', 'variable','value']
+    df['dt'] = pd.to_datetime(df['dt'], format = '%Y-%m-%d')
+    df['cd_uf'] = df['cd_uf'].astype(str)
+    df['value'] = df['value']*1000
+    df = df[(df['dt'].dt.year >= 1997) & (df['cd_uf'].apply(lambda x:len(x)) == 2)]
+    df.sort_values(['cd_uf','dt'], inplace=True)
+    df.name = 'pib'
     return df
