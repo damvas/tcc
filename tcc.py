@@ -411,3 +411,41 @@ def get_gini_rend_med():
     df['dt'] = df['dt'].astype(str)
     df.name = 'gini_rend_med'
     return df
+
+def download_pop_censo():
+    pop_censo = sidrapy.get_table(136, 3, 'all', period= 'all')
+    pop_censo = pop_censo.iloc[1:, :]
+    pop_censo = pop_censo[['V','D1C','D2C']]
+    pop_censo = pop_censo.rename(columns = {'V': 'value',
+                                'D1C': 'cd_uf',
+                                'D2C': 'dt'})
+    pop_censo['value'] = pop_censo['value'].astype(int)
+    pop_censo['variable'] = 'pop_censo'
+    pop_censo = pop_censo[['dt','cd_uf','variable','value']]
+    pop_censo.to_csv(r"C:\Users\danie\Desktop\TCC\Dados\SIDRA\pop_censo.csv", index=False, sep = ';')
+
+def get_pop_censo():
+    pop_censo = pd.read_csv(r"C:\Users\danie\Desktop\TCC\Dados\SIDRA\pop_censo.csv", sep = ';')
+    pop_censo['cd_uf'] = pop_censo['cd_uf'].astype(str)
+    pop_censo = apply_uf_dict(pop_censo)
+    pop_censo['dt'] = pop_censo['dt'].astype(str)
+    pop_censo.name = 'pop_censo'
+    return pop_censo
+
+def get_data():
+    exp = get_comex('exp')
+    imp = get_comex('imp')
+    pnadc_gini = get_pnadc_gini()
+    microdados_pnad_gini = get_microdados_pnad_gini()
+    microdados_pnadc_gini = get_microdados_pnadc_gini()
+    datasus_gini = get_datasus_gini()
+    gini_rend_med = get_gini_rend_med()
+    eci = get_dataviva()
+    pop_pnadc = get_pop_pnadc()
+    pop_pnad = get_pop_pnad()
+    pop_censo = get_pop_censo()
+    pib = get_pib()
+
+    dfs = [exp, imp, pnadc_gini, microdados_pnad_gini, microdados_pnadc_gini, datasus_gini, gini_rend_med, eci, pop_pnadc, pop_pnad, pop_censo, pib]
+    dados = get_pivot_bd(dfs)
+    dados.to_csv(r"C:\Users\danie\Desktop\TCC\Dados\BASE\basededados_raw.csv", sep = ';', index = False)
