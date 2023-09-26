@@ -1,12 +1,15 @@
 import pandas as pd
 import os
+import numpy as np
 import csv
 import bz2
 import sidrapy
 import ipeadatapy as ip
 import seaborn as sns
 import matplotlib.pyplot as plt
+import requests
 import numpy as np
+import basedosdados as bd
 
 def get_pivot_bd(dfs):
     piv_bd = pd.DataFrame()
@@ -15,8 +18,7 @@ def get_pivot_bd(dfs):
         if piv_bd.empty:
             piv_bd = piv
         else:
-            piv_bd = pd.merge(piv_bd, piv, 'left', ['dt', 'cd_uf'])
-    piv_bd.to_csv(r"C:\Users\danie\Desktop\TCC\Dados\pivot_bd.csv")
+            piv_bd = pd.merge(piv_bd, piv, 'left', ['dt', 'sg_uf'])
     return piv_bd
 
 def process_csv(file_path, chunk_size, encoding='utf-8'):
@@ -41,7 +43,7 @@ def open_dataviva():
     return secex, rais
 
 def download_gini():
-    df = sidrapy.get_table(7435, 
+    df = sidrapy.get_table(7435, # Índice de Gini do rendimento domiciliar per capita, a preços médios do ano
                            3, 
                            'all', 
                            variable=10681, 
@@ -57,9 +59,9 @@ def download_gini():
     df['variable'] = 'gini'
     df['dt'] = pd.to_datetime(df['dt'], format = '%Y')
     df = df[['dt', 'cd_uf', 'uf', 'variable','value']]
-    return df
+    df.to_excel(r"C:\Users\danie\Desktop\TCC\Dados\sidra_gini.xlsx", index=False)
 
-def get_gini():
+def get_pnadc_gini():
     df = pd.read_excel(r"C:\Users\danie\Desktop\TCC\Dados\sidra_gini.xlsx")
     dct = pd.read_csv(r"C:\Users\danie\Desktop\TCC\Dados\dct_uf.csv", delimiter=';')
     dct['cd_uf'] = dct['cd_uf'].astype(str)
@@ -70,7 +72,9 @@ def get_gini():
     df.to_excel(r"C:\Users\danie\Desktop\TCC\Dados\sidra_gini.xlsx", index=False)
     df[df['dt'].dt.year == 2012].to_excel(rf"C:\Users\danie\Desktop\TCC\Dados\sidra_gini_12.xlsx",index=False)
     df[df['dt'].dt.year == 2022].to_excel(rf"C:\Users\danie\Desktop\TCC\Dados\sidra_gini_22.xlsx",index=False)
-    df.name = 'gini'
+    df = apply_uf_dict(df)
+    df['dt'] = df['dt'].astype(str).str[:4]
+    df.name = 'pnadc_gini'
     return df
 
 def get_comex(exp_or_imp):
@@ -89,13 +93,14 @@ def get_comex(exp_or_imp):
     df.to_excel(rf"C:\Users\danie\Desktop\TCC\Dados\ipeadata_{exp_or_imp}.xlsx",index=False)
     df[df['dt'].dt.year == 2012].to_excel(rf"C:\Users\danie\Desktop\TCC\Dados\ipeadata_{exp_or_imp}_12.xlsx",index=False)
     df[df['dt'].dt.year == 2022].to_excel(rf"C:\Users\danie\Desktop\TCC\Dados\ipeadata_{exp_or_imp}_22.xlsx",index=False)
+    df = apply_uf_dict(df)
+    df['dt'] = df['dt'].astype(str).str[:4]
     df.name = exp_or_imp
     return df
 
 def pivot_df(df: pd.DataFrame, df_name: str) -> pd.DataFrame:
     df[df_name] = df['value']
-    df['cd_uf'] = df['cd_uf'].astype(str)
-    piv_df = df[['dt','cd_uf',df_name]]
+    piv_df = df[['dt','sg_uf',df_name]]
     return piv_df
 
 def get_secex():
@@ -117,6 +122,7 @@ def get_secex():
     }).reset_index()
     df.columns = ['dt','cd_sh4','sg_uf','sh4','cd_sh2','sh2','cd_sec','sec','value']
     df['dt'] = pd.to_datetime(df['dt'], format='%Y')
+    df['dt'] = df['dt'].astype(str).str[:4]
     df = df[['dt','sg_uf','sec','cd_sec','sh2','cd_sh2','sh4','cd_sh4','value']]
     return df
 
@@ -178,32 +184,58 @@ def get_dataviva():
                     'Complexidade Econômica': 'value'})
     df['dt'] = pd.to_datetime(df['dt'], format = '%Y')
     df['value'] = df['value'].astype(float)
+    df = apply_uf_dict(df)
+    df['dt'] = df['dt'].astype(str).str[:4]
     df.name = 'eci'
     return df
 
-def download_pop():
-    pop = sidrapy.get_table(7436, # População residente
+def download_pop_pnadc():
+    pop_pnadc = sidrapy.get_table(7436, # População residente PNADc
                         3, 
                         'all', 
                         period = 'all',
                         variable = 606)
-    pop = pop.iloc[1:, :]
-    pop = pop[['V','D1C','D2C']]
-    pop = pop.rename(columns = {'V': 'value',
+    pop_pnadc = pop_pnadc.iloc[1:, :]
+    pop_pnadc = pop_pnadc[['V','D1C','D2C']]
+    pop_pnadc = pop_pnadc.rename(columns = {'V': 'value',
                                 'D1C': 'cd_uf',
                                 'D2C': 'dt'})
-    pop['value'] = pop['value'].astype(int)*1000
-    pop['dt'] = pd.to_datetime(pop['dt'], format = '%Y')
-    pop['variable'] = 'pop'
-    pop = pop[['dt','cd_uf','variable','value']]
-    pop.to_csv(r"C:\Users\danie\Desktop\TCC\Dados\SIDRA\pop.csv", index=False)
+    pop_pnadc['value'] = pop_pnadc['value'].astype(int)*1000
+    pop_pnadc['variable'] = 'pop_pnadc'
+    pop_pnadc = pop_pnadc[['dt','cd_uf','variable','value']]
+    pop_pnadc.to_csv(r"C:\Users\danie\Desktop\TCC\Dados\SIDRA\pop_pnadc.csv", index=False)
 
-def get_pop():
-    pop = pd.read_csv(r"C:\Users\danie\Desktop\TCC\Dados\SIDRA\pop.csv")
-    pop['cd_uf'] = pop['cd_uf'].astype(str)
-    pop['dt'] = pd.to_datetime(pop['dt'])
-    pop.name = 'pop'
-    return pop
+def download_pop_pnad():
+    pop_pnad = sidrapy.get_table(261, # População residente PNAD
+                    3, 
+                    'all', 
+                    period = 'all',
+                    variable = 93)
+    pop_pnad = pop_pnad.iloc[1:, :]
+    pop_pnad = pop_pnad[['V','D1C','D2C']]
+    pop_pnad = pop_pnad.rename(columns = {'V': 'value',
+                                'D1C': 'cd_uf',
+                                'D2C': 'dt'})
+    pop_pnad['value'] = pop_pnad['value'].astype(int)*1000
+    pop_pnad['variable'] = 'pop_pnad'
+    pop_pnad = pop_pnad[['dt','cd_uf','variable','value']]
+    pop_pnad.to_csv(r"C:\Users\danie\Desktop\TCC\Dados\SIDRA\pop_pnad.csv", index=False)
+
+def get_pop_pnadc():
+    pop_pnadc = pd.read_csv(r"C:\Users\danie\Desktop\TCC\Dados\SIDRA\pop_pnadc.csv")
+    pop_pnadc['cd_uf'] = pop_pnadc['cd_uf'].astype(str)
+    pop_pnadc = apply_uf_dict(pop_pnadc)
+    pop_pnadc['dt'] = pop_pnadc['dt'].astype(str)
+    pop_pnadc.name = 'pop_pnadc'
+    return pop_pnadc
+
+def get_pop_pnad():
+    pop_pnad = pd.read_csv(r"C:\Users\danie\Desktop\TCC\Dados\SIDRA\pop_pnad.csv")
+    pop_pnad['cd_uf'] = pop_pnad['cd_uf'].astype(str)
+    pop_pnad = apply_uf_dict(pop_pnad)
+    pop_pnad['dt'] = pop_pnad['dt'].astype(str)
+    pop_pnad.name = 'pop_pnad'
+    return pop_pnad
 
 def download_pib():
     df = ip.timeseries('PIBPMCE',
@@ -221,5 +253,161 @@ def get_pib():
     df['value'] = df['value']*1000
     df = df[(df['dt'].dt.year >= 1997) & (df['cd_uf'].apply(lambda x:len(x)) == 2)]
     df.sort_values(['cd_uf','dt'], inplace=True)
+    df = apply_uf_dict(df)
+    df['dt'] = df['dt'].astype(str).str[:4]
     df.name = 'pib'
+    return df
+
+def download_income_share():
+    df = sidrapy.get_table(7545, # Rendimento médio mensal real das pessoas de 14 anos ou mais de idade ocupadas na semana de referência com rendimento de trabalho, efetivamente recebido em todos os trabalhos, a preços médios do ano, por classes simples de percentual das pessoas em ordem crescente de rendimento efetivamente recebido
+                    3, 
+                    'all', 
+                    period = 'all',
+                    variable = 10850,
+                    classification='1046/all')
+
+    df.to_csv(r"C:\Users\danie\Desktop\TCC\Dados\SIDRA\income_share.csv", index=False)
+
+def get_income_share():
+    df = pd.read_csv(r"C:\Users\danie\Desktop\TCC\Dados\SIDRA\income_share.csv")
+    df = df.iloc[1:, :]
+    df = df[['V','D1C','D2C','D4N']]
+    df = df.rename(columns = {'V': 'value',
+                            'D1C': 'cd_uf',
+                            'D2C': 'dt',
+                            'D4N': 'percentile'})
+    df = df.drop(index = df[df['value'] == '-'].index).reset_index(drop=True)
+    df['value'] = df['value'].astype(int)
+    df['dt'] = pd.to_datetime(df['dt'], format = '%Y')
+    df['variable'] = 'income_share'
+    df = df[['dt','cd_uf','variable','percentile','value']]
+    df = apply_uf_dict(df)
+    df['dt'] = df['dt'].astype(str).str[:4]
+    df.name = 'income_share'
+    return df
+
+def get_uf_cd_uf_dict():
+    df = pd.read_csv(r"C:\Users\danie\Desktop\TCC\Dados\SIDRA\uf_cd_uf_dict.csv")
+    # df = df[['D1N','D1C']].iloc[1:,:].drop_duplicates()
+    # df = df.rename(columns = {'D1N': 'uf',
+    #                         'D1C': 'cd_uf'}).reset_index(drop=True)
+    # uf = ['RO', 'AC', 'AM', 'RR', 'PA', 'AP', 'TO', 'MA', 'PI', 'CE', 'RN', 'PB', 'PE', 'AL', 'SE', 'BA', 'MG', 'ES', 'RJ', 'SP', 'PR', 'SC', 'RS', 'MS', 'MT', 'GO', 'DF']
+    # df['sg_uf'] = uf
+    df['cd_uf'] = df['cd_uf'].astype(str)
+    dct = dict(zip(df['cd_uf'], df['sg_uf']))
+    dct.update(dict(zip(df['uf'], df['sg_uf'])))
+    return dct
+
+def get_datasus_gini():
+    df = pd.read_csv(r"C:\Users\danie\Desktop\TCC\Dados\DATASUS\gini.csv", encoding='latin1', delimiter=';') # Índice de Gini da renda domiciliar per capita http://tabnet.datasus.gov.br/cgi/idb2011/b09ufa.htm
+    ano = df.iloc[2,1:].str.split(' - ').str[0]
+    df = df.iloc[3:36,:]
+    df.columns = ['uf'] + list(ano)
+    df = pd.melt(df, id_vars = ['uf'], value_name='value', var_name='dt')
+    df.loc[df.dt.isin(['1991', '2000', '2010']), 'fonte'] = 'censo'
+    df.loc[~df.dt.isin(['1991', '2000', '2010']), 'fonte'] = 'pnad'
+    df['variable'] = 'gini'
+    df = apply_uf_dict(df)
+    df['dt'] = df['dt'].astype(str).str[:4]
+    df['value'] = df['value'].str.replace(',','.',regex=False).astype(float)
+    df = df[['dt','fonte','sg_uf','variable','value']]
+    df.name = 'datasus_gini'
+    return df
+
+def apply_uf_dict(df):
+    dct = get_uf_cd_uf_dict()
+    if 'uf' in df.columns:
+        df['sg_uf'] = df['uf'].replace(dct)
+    elif 'cd_uf' in df.columns:
+        df['sg_uf'] = df['cd_uf'].replace(dct)
+    df = df.loc[df.sg_uf.apply(lambda x:len(x) == 2)]
+    return df
+
+def download_pnad_household_income():
+    query = """
+    SELECT ano, sigla_uf, renda_mensal_domiciliar_compativel_1992 
+    FROM `basedosdados.br_ibge_pnad.microdados_compatibilizados_domicilio` 
+    """
+    df = bd.read_sql(query, billing_project_id="rais-357517")
+    df = df.sort_values(['ano','sigla_uf'])
+    df.columns = ['dt','sg_uf','renda_mensal_domiciliar']
+    df.to_csv(r'C:\Users\danie\Desktop\TCC\Dados\BASEDOSDADOS\pnad_renda_mensal_domicilar_uf_1981_2015.csv', index=False)
+
+def download_pndac_household_income():
+    query = """
+    SELECT ano, sigla_uf, VD4020 
+    FROM `basedosdados.br_ibge_pnadc.microdados` 
+    WHERE trimestre = 1 AND VD4020 IS NOT NULL
+    """
+    df = bd.read_sql(query, billing_project_id="rais-357517") # Rendimento mensal efetivo de todos os trabalhos para pessoas de 14 anos ou mais de idade (apenas para pessoas que receberam em dinheiro, produtos ou mercadorias em qualquer trabalho)	
+    df = df.sort_values(['ano','sigla_uf'])
+    df.columns = ['dt','sg_uf','renda_mensal_efetiva']
+    df['dt'] = df['dt'].astype(str)
+    df.to_csv(r'C:\Users\danie\Desktop\TCC\Dados\BASEDOSDADOS\pnadc_renda_mensal_efetiva_uf_2012_2023.csv', index=False)
+
+def calculate_gini(x):
+    n = len(x)
+    x_sorted = np.sort(x)
+    cum_income = np.cumsum(x_sorted)
+    cumulative_percentage = cum_income / cum_income[-1]
+    return 1 - (2 * np.sum(cumulative_percentage) / n) + (1 / n)
+
+def get_microdados_pnad_gini():
+    df = pd.read_csv(r'C:\Users\danie\Desktop\TCC\Dados\BASEDOSDADOS\pnad_renda_mensal_domicilar_uf_1981_2015.csv')
+    gini_results = []
+    grouped = df[df['renda_mensal_domiciliar'].notna()].groupby(['sg_uf', 'dt'])
+    for (uf, dt), group in grouped:
+        income_array = group['renda_mensal_domiciliar'].values
+        gini_index = calculate_gini(income_array)
+        gini_results.append({'dt': dt, 'sg_uf': uf, 'gini': gini_index})
+    gini_df = pd.DataFrame(gini_results)
+    gini_df = gini_df.sort_values(['dt','sg_uf']).reset_index(drop=True)
+    gini_df = gini_df.rename(columns = {'gini': 'value'})
+    gini_df['variable'] = 'microdados_pnad_gini'
+    gini_df = gini_df[['dt','sg_uf','variable','value']]
+    gini_df['dt'] = gini_df['dt'].astype(str).str[:4]
+    gini_df.name = 'microdados_pnad_gini'
+    return gini_df
+
+def get_microdados_pnadc_gini():
+    df = pd.read_csv(r'C:\Users\danie\Desktop\TCC\Dados\BASEDOSDADOS\pnadc_renda_mensal_efetiva_uf_2012_2023.csv')
+    gini_results = []
+    grouped = df[df['renda_mensal_efetiva'].notna()].groupby(['sg_uf', 'dt'])
+    for (uf, dt), group in grouped:
+        income_array = group['renda_mensal_efetiva'].values
+        gini_index = calculate_gini(income_array)
+        gini_results.append({'dt': dt, 'sg_uf': uf, 'gini': gini_index})
+    gini_df = pd.DataFrame(gini_results)
+    gini_df = gini_df.sort_values(['dt','sg_uf']).reset_index(drop=True)
+    gini_df = gini_df.rename(columns = {'gini': 'value'})
+    gini_df['variable'] = 'microdados_pnadc_gini'
+    gini_df = gini_df[['dt','sg_uf','variable','value']]
+    gini_df['dt'] = gini_df['dt'].astype(str).str[:4]
+    gini_df.name = 'microdados_pnadc_gini'
+    return gini_df
+
+def download_gini_rend_med():
+    df = sidrapy.get_table(7453, # Índice de Gini do rendimento médio mensal real das pessoas de 14 anos ou mais de idade ocupadas na semana de referência com rendimento de trabalho, habitualmente recebido em todos os trabalhos, a preços médios do ano
+                            3, 
+                            'all', 
+                            variable=10806, 
+                            period = 'all')
+    df.columns = df.iloc[0]
+    df = df.iloc[1:, :]
+    df['Valor'] = df['Valor'].astype(float)
+    df['Ano'] = df['Ano'].astype(str)
+    df = df.rename(columns = {"Valor" : "value",
+                        "Ano": "dt",
+                        "Unidade da Federação (Código)": "cd_uf",
+                        "Unidade da Federação": "uf",
+                        "Variável": "variable"})
+    df['variable'] = 'gini'
+    df = df[['dt', 'cd_uf', 'uf', 'variable','value']]
+    df.to_csv(r'C:\Users\danie\Desktop\TCC\Dados\SIDRA\gini_rendimento_medio_mensal_real.csv')
+
+def get_gini_rend_med():
+    df = pd.read_csv(r'C:\Users\danie\Desktop\TCC\Dados\SIDRA\gini_rendimento_medio_mensal_real.csv', index_col=0)
+    df = apply_uf_dict(df)
+    df['dt'] = df['dt'].astype(str)
+    df.name = 'gini_rend_med'
     return df
