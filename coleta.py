@@ -11,6 +11,27 @@ import requests
 import numpy as np
 import basedosdados as bd
 
+def get_data():
+    exp = get_comex('exp')
+    imp = get_comex('imp')
+    pnadc_gini = get_pnadc_gini()
+    microdados_pnad_gini = get_microdados_pnad_gini()
+    microdados_pnadc_gini = get_microdados_pnadc_gini()
+    datasus_gini = get_datasus_gini()
+    gini_rend_med = get_gini_rend_med()
+    eci = get_dataviva()
+    pop_pnadc = get_pop_pnadc()
+    pop_pnad = get_pop_pnad()
+    pop_censo = get_pop_censo()
+    pib = get_pib()
+    adh_theil = get_adh_theil()
+    adh_gini = get_adh_gini()
+    adh_anos_est = get_adh_anos_est()
+
+    dfs = [exp, imp, pnadc_gini, microdados_pnad_gini, microdados_pnadc_gini, datasus_gini, gini_rend_med, adh_gini, adh_theil, eci, pop_pnadc, pop_pnad, pop_censo, pib, adh_anos_est]
+    dados = get_pivot_bd(dfs)
+    dados.to_csv(r"C:\Users\danie\Desktop\TCC\Dados\BASE\basededados_raw.csv", sep = ';', index = False)
+
 def get_pivot_bd(dfs):
     piv_bd = pd.DataFrame()
     for df in dfs:
@@ -108,8 +129,9 @@ def get_secex():
     file = os.listdir(secex_dir)[1]
     fdf = pd.DataFrame()
     for file in os.listdir(secex_dir):
-        sub_df = pd.read_csv(os.path.join(secex_dir,file), delimiter=';')
-        fdf = pd.concat([fdf,sub_df])
+        if file.endswith('.csv'):
+            sub_df = pd.read_csv(os.path.join(secex_dir,file), delimiter=';')
+            fdf = pd.concat([fdf,sub_df])
     fdf.reset_index(drop=True,inplace=True)
     fdf['sg_uf'] = fdf['Município'].str[-2:]
     df = fdf.groupby(['Ano', 'Codigo SH4', 'sg_uf']).agg({
@@ -124,6 +146,7 @@ def get_secex():
     df['dt'] = pd.to_datetime(df['dt'], format='%Y')
     df['dt'] = df['dt'].astype(str).str[:4]
     df = df[['dt','sg_uf','sec','cd_sec','sh2','cd_sh2','sh4','cd_sh4','value']]
+    df = df[~df['sg_uf'].isin(['ND','EX'])].reset_index(drop=True)
     return df
 
 def get_dataviva_eci():
@@ -449,3 +472,127 @@ def get_data():
     dfs = [exp, imp, pnadc_gini, microdados_pnad_gini, microdados_pnadc_gini, datasus_gini, gini_rend_med, eci, pop_pnadc, pop_pnad, pop_censo, pib]
     dados = get_pivot_bd(dfs)
     dados.to_csv(r"C:\Users\danie\Desktop\TCC\Dados\BASE\basededados_raw.csv", sep = ';', index = False)
+
+def get_adh_anos_est():
+    df = pd.read_excel(r"C:\Users\danie\Desktop\TCC\Dados\ADH\ADH_BASE_RADAR_2012-2021.xlsx", sheet_name='TOTAL')
+    df = df[['ANO','AGREGACAO','NOME','ANOSEST']]
+    df.columns = ['dt', 'level_local', 'uf', 'adh_anos_est']
+    df = df.query("level_local == 'UF'").copy().reset_index(drop=True)
+    df = df.drop(columns = ['level_local'])
+    df['nm_variable'] = 'adh_anos_est'
+    df = df.rename(columns = {'adh_anos_est': 'value'})
+    df['dt'] = df['dt'].astype(str)
+    df = apply_uf_dict(df)
+    df.name = 'adh_anos_est'
+    return df
+
+def get_adh_gini():
+    df = pd.read_excel(r"C:\Users\danie\Desktop\TCC\Dados\ADH\ADH_BASE_RADAR_2012-2021.xlsx", sheet_name='TOTAL')
+    df = df[['ANO','AGREGACAO','NOME','GINI']]
+    df.columns = ['dt', 'level_local', 'uf', 'adh_gini']
+    df = df.query("level_local == 'UF'").copy().reset_index(drop=True)
+    df = df.drop(columns = ['level_local'])
+    df['nm_variable'] = 'adh_gini'
+    df = df.rename(columns = {'adh_gini': 'value'})
+    df['dt'] = df['dt'].astype(str)
+    df = apply_uf_dict(df)
+    df.name = 'adh_gini'
+    return df
+
+def get_adh_theil():
+    df = pd.read_excel(r"C:\Users\danie\Desktop\TCC\Dados\ADH\ADH_BASE_RADAR_2012-2021.xlsx", sheet_name='TOTAL')
+    df = df[['ANO','AGREGACAO','NOME','THEIL']]
+    df.columns = ['dt', 'level_local', 'uf', 'adh_theil']
+    df = df.query("level_local == 'UF'").copy().reset_index(drop=True)
+    df = df.drop(columns = ['level_local'])
+    df['nm_variable'] = 'adh_theil'
+    df = df.rename(columns = {'adh_theil': 'value'})
+    df['dt'] = df['dt'].astype(str)
+    df = apply_uf_dict(df)
+    df.name = 'adh_theil'
+    return df
+
+def calculate_yearly_rca(df: pd, year: str) -> pd.DataFrame:
+    df = df.query("dt == @year").reset_index(drop=True)
+    df['global_share'] = df['global_export_value']/df['global_export_value'].sum()
+    df['export_share'] = df['export_value']/df['export_value'].sum()
+    df['calculated_rca'] = df['export_share']/df['global_share']
+    return df
+
+def calculate_rca(df: pd.DataFrame) -> pd.DataFrame:
+    fdf = pd.DataFrame()
+    for year in list(df['dt'].unique()):
+        year_df = calculate_yearly_rca(df, year)
+        fdf = pd.concat([fdf, year_df])
+    return fdf
+
+def determine_rca(df: pd.DataFrame):
+    mask = df['calculated_rca'] >= 1
+    df.loc[mask, 'has_rca_calc'] = 1
+    df.loc[~mask, 'has_rca_calc'] = 0
+
+    if 'export_rca' in df.columns:
+        mask = df['export_rca'] >= 1
+        df.loc[mask, 'has_rca'] = 1
+        df.loc[~mask, 'has_rca'] = 0
+
+        mask = df['has_rca_calc'] == df['has_rca']
+        df.loc[mask, 'rca_is_correct'] = 1
+        df.loc[~mask, 'rca_is_correct'] = 0
+    return df
+
+def get_brazil_rca():
+    dct = pd.read_csv(r"HARVARD\sh4_dict.csv", sep = ';')
+    trade = pd.read_csv(r"HARVARD\trade.csv", sep = ';')
+    exports = pd.read_csv(r"HARVARD\exports.csv", sep = ';')
+
+    trade_bra = trade.query("location_code == 'BRA'").copy().reset_index(drop=True)
+    trade_bra.loc[trade_bra['export_value'] == 0, 'export_value'] = None
+    trade_bra = trade_bra.dropna(axis = 0).reset_index(drop=True)
+
+    dfs = [trade_bra, dct, exports]
+    for df in dfs:
+        df = stringify_columns(df)
+
+    df = pd.merge(trade_bra, exports, how = 'left', on = ['dt','cd_sh4'])
+    df = pd.merge(df, dct, 'left', ['cd_sh4'])
+    df = calculate_rca(df)
+    df = determine_rca(df)
+    df.to_csv(r'BASE\tentativa_calculo_rca_brasil.csv', sep = ';', index = False)
+
+def stringify_columns(df: pd.DataFrame) -> pd.DataFrame:
+    for col in ['cd_sh4','dt']:
+        if col in df.columns:
+            df[col] = df[col].astype(str)
+    return df
+
+def process_secex_uf_exports():
+    fdf = pd.DataFrame()
+    for file in os.listdir(r'SECEX\Dados\UF'):
+        df = pd.read_csv(rf'SECEX\Dados\UF\{file}', sep = ';')
+        fdf = pd.concat([fdf, df])
+    fdf = fdf.sort_values(['Ano', 'UF do Município', 'Codigo Seção', 'Codigo SH2','Codigo SH4']).reset_index(drop=True)
+    fdf.to_csv(r'SECEX\uf_exports.csv', sep = ';', index = False)
+
+def get_secex_uf():
+    df = pd.read_csv(r'SECEX\uf_exports.csv', sep = ';')
+    return df
+
+def get_uf_rca():
+    secex = get_secex_uf()
+    dct = pd.read_csv(r"HARVARD\sh4_dict.csv", sep = ';')
+    exports = pd.read_csv(r"HARVARD\exports.csv", sep = ';')
+
+    secex.columns = ['dt', 'uf', 'cd_sh4', 'desc_sh4', 'cd_sh2', 'desc_sh2', 'cd_sec', 'desc_sec', 'export_value']
+    dfs = [secex, dct, exports]
+    for df in dfs:
+        df = stringify_columns(df)
+
+    secex = secex.rename(columns = {'value': 'export_value'})
+    secex = secex[['dt','uf','cd_sh4','export_value']]
+
+    df = pd.merge(secex, exports, how = 'left', on = ['dt','cd_sh4'])
+    df = pd.merge(df, dct, 'left', ['cd_sh4'])
+    df = calculate_rca(df)
+    df = determine_rca(df)
+    df.to_csv(r'BASE\tentativa_calculo_rca_uf.csv', sep = ';', index = False)
