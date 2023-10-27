@@ -2,9 +2,11 @@ import pandas as pd
 import statsmodels.api as sm
 from statsmodels.formula.api import ols
 import matplotlib.pyplot as plt
+from matplotlib.font_manager import FontProperties
 import math
 from linearmodels.panel import PanelOLS
 from linearmodels.panel.results import PanelResults
+from tabulate import tabulate
 
 def get_data():
     df = load_raw_database()
@@ -62,3 +64,19 @@ def export_database(df: pd.DataFrame) -> None:
 def load_database() -> pd.DataFrame:
     
     return pd.read_csv(r"C:\Users\danie\Desktop\TCC\Dados\BASE\basededados.csv", sep = ';')
+
+def get_gini_corr(df: pd.DataFrame) -> float:
+    return df.query("pnadc_gini.notna() & datasus_gini.notna()")[['pnadc_gini','datasus_gini']].corr()['pnadc_gini'].iloc[1]
+
+def get_descriptive_stats(df: pd.DataFrame) -> pd.DataFrame:
+    desc_stats = df[['gini','eci','trade_pib_eci','trade_pib','lpib','lpop']].describe().T[['count','mean','std','50%','min','max']]
+    desc_stats['count'] = desc_stats['count'].apply(lambda x:round(x))
+    desc_stats = desc_stats.round(4)
+    desc_stats.index = ['Gini','ICE','ICE * Comércio','Comércio','Ln(PIB)','Ln(População)']
+    desc_stats.columns = ['Observações','Média','Desvio Padrão','Mediana','Mínimo','Máximo']
+    desc_stats = desc_stats.reset_index(names='Variável')
+    desc_stats = desc_stats.astype(str)
+    for col in desc_stats.columns:
+        desc_stats[col] = desc_stats[col].str.replace('.',',',regex=False)
+    desc_stats.to_csv(r"C:\Users\danie\Desktop\TCC\Dados\tabelas\desc_stat.csv", index = False, sep = ';', encoding='latin1')
+    return desc_stats
