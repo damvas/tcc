@@ -80,3 +80,59 @@ def get_descriptive_stats(df: pd.DataFrame) -> pd.DataFrame:
         desc_stats[col] = desc_stats[col].str.replace('.',',',regex=False)
     desc_stats.to_csv(r"C:\Users\danie\Desktop\TCC\Dados\tabelas\desc_stat.csv", index = False, sep = ';', encoding='latin1')
     return desc_stats
+
+def get_results_table(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.set_index(['sg_uf', 'dt'])
+    df['const'] = 1
+
+    # reghdfe gini eci  lpib lpop , a(sg_uf dt) cluster(sg)
+    mod1 = PanelOLS.from_formula('gini ~ eci + lpib + lpop + EntityEffects + TimeEffects', data=df)
+    res1 = mod1.fit(cov_type='clustered', cluster_entity=True)
+    # reghdfe gini trade_pib lpib   lpop , a(sg_uf dt) cluster(sg)
+    mod2 = PanelOLS.from_formula('gini ~ trade_pib + lpib + lpop + EntityEffects + TimeEffects', data=df)
+    res2 = mod2.fit(cov_type='clustered', cluster_entity=True)
+    # reghdfe gini eci  trade_pib lpib   lpop , a(sg_uf dt) cluster(sg)
+    mod3 = PanelOLS.from_formula('gini ~ eci + trade_pib + lpib + lpop + EntityEffects + TimeEffects', data=df)
+    res3 = mod3.fit(cov_type='clustered', cluster_entity=True)
+    # reghdfe gini eci trade_pib_eci trade_pib lpib   lpop , a(sg_uf dt) cluster(sg)
+    mod4 = PanelOLS.from_formula('gini ~ eci + trade_pib_eci + trade_pib + lpib + lpop + EntityEffects + TimeEffects', data=df)
+    res4 = mod4.fit(cov_type='clustered', cluster_entity=True)
+
+    res_table = pd.DataFrame()
+    for r in [res1, res2, res3, res4]:
+        r_df = pd.DataFrame([r.params, r.std_errors, r.pvalues])
+
+        r_df['R²'] = r.rsquared
+
+        r_df.columns = pd.Series(r_df.columns).replace({'eci': 'ECI',
+                                        'trade_pib_eci': 'Comércio * ECI',
+                                        'trade_pib': 'Comércio',
+                                        'lpib': 'Ln(PIB)',
+                                        'lpop': 'Ln(População)'})
+        
+        r_df = r_df.round(4)
+        for col in r_df.columns:
+            if col not in ['','R²']:
+                r_df.loc['parameter', col] = str(r_df.loc['parameter', col])
+                if r_df[col].pvalue < 0.1:
+                    r_df.loc['parameter', col] += '*'
+                if r_df[col].pvalue < 0.05:
+                    r_df.loc['parameter', col] += '*'
+                if r_df[col].pvalue < 0.01:
+                    r_df.loc['parameter', col] += '*'
+
+        res_table = pd.concat([res_table, r_df])
+
+    res_table = res_table.reset_index(names='')
+
+    res_table = res_table[ [''] + [i for i in ['ECI','Comércio','Comércio * ECI','Ln(PIB)','Ln(População)','R²'] if i in r_df.columns]]
+    res_table = res_table.applymap(lambda x:str(x))
+    res_table = res_table.applymap(lambda x:'' if x == 'nan' else x)
+    res_table = res_table.applymap(lambda x:x.replace('.',','))
+
+    res_table[''] = res_table[''].replace({'parameter': 'Coeficiente',
+                    'std_error': 'Erro Padrão',
+                    'pvalue': 'Valor-p'})
+
+    res_table.to_csv(r"C:\Users\danie\Desktop\TCC\Dados\tabelas\results_table.csv", sep = ';', encoding='latin1', index = False)
+    return res_table
