@@ -12,25 +12,30 @@ import numpy as np
 import basedosdados as bd
 
 def get_data():
-    exp = get_comex('exp')
-    imp = get_comex('imp')
+    exp = get_uf_exp_monthly_brl()
+    imp = get_uf_imp_monthly_brl()
+
     pnadc_gini = get_pnadc_gini()
-    microdados_pnad_gini = get_microdados_pnad_gini()
-    microdados_pnadc_gini = get_microdados_pnadc_gini()
-    datasus_gini = get_datasus_gini()
-    gini_rend_med = get_gini_rend_med()
+    pnad_gini = get_pnad_gini()
+
     eci = get_dataviva()
+
     pop_pnadc = get_pop_pnadc()
     pop_pnad = get_pop_pnad()
     pop_censo = get_pop_censo()
-    pib = get_pib()
-    adh_theil = get_adh_theil()
-    adh_gini = get_adh_gini()
-    adh_anos_est = get_adh_anos_est()
 
-    dfs = [exp, imp, pnadc_gini, microdados_pnad_gini, microdados_pnadc_gini, datasus_gini, gini_rend_med, adh_gini, adh_theil, eci, pop_pnadc, pop_pnad, pop_censo, pib, adh_anos_est]
-    dados = get_pivot_bd(dfs)
-    dados.to_csv(r"C:\Users\danie\Desktop\TCC\Dados\BASE\basededados_raw.csv", sep = ';', index = False)
+    pib = get_pib()
+
+    dfs = [exp, imp, pnadc_gini, pnad_gini, eci, pop_pnadc, pop_pnad, pop_censo, pib]
+
+    for i,d in enumerate(dfs):
+        d['year'] = d['year'].astype(str)
+        if i == 0:
+            df = d
+        else:
+            df = pd.merge(df,d,'left',['year','sg_uf'])
+
+    df.to_csv(r"C:\Users\danie\Desktop\TCC\Dados\BASE\basededados_raw.csv", sep = ';', index = False, decimal = ',')
 
 def get_pivot_bd(dfs):
     piv_bd = pd.DataFrame()
@@ -83,20 +88,9 @@ def download_gini():
     df.to_excel(r"C:\Users\danie\Desktop\TCC\Dados\sidra_gini.xlsx", index=False)
 
 def get_pnadc_gini():
-    df = pd.read_excel(r"C:\Users\danie\Desktop\TCC\Dados\sidra_gini.xlsx")
-    dct = pd.read_csv(r"C:\Users\danie\Desktop\TCC\Dados\dct_uf.csv", delimiter=';')
-    dct['cd_uf'] = dct['cd_uf'].astype(str)
-    df['cd_uf'] = df['cd_uf'].astype(str)
-    df = pd.merge(df,dct,'left',['cd_uf','sg_uf'])
-    df = df[['dt','uf','sg_uf','cd_uf','variable','value']]
-    df = df.sort_values(['dt','cd_uf']).reset_index(drop=True)
-    df.to_excel(r"C:\Users\danie\Desktop\TCC\Dados\sidra_gini.xlsx", index=False)
-    df[df['dt'].dt.year == 2012].to_excel(rf"C:\Users\danie\Desktop\TCC\Dados\sidra_gini_12.xlsx",index=False)
-    df[df['dt'].dt.year == 2022].to_excel(rf"C:\Users\danie\Desktop\TCC\Dados\sidra_gini_22.xlsx",index=False)
-    df = apply_uf_dict(df)
-    df['dt'] = df['dt'].astype(str).str[:4]
-    df.name = 'pnadc_gini'
-    return df
+    pnadc_gini = pd.read_csv(r"C:\Users\danie\Desktop\TCC\Dados\SIDRA\pnadc_gini.csv", sep = ';', decimal = ',', encoding = 'latin1')
+    pnadc_gini = pnadc_gini.rename(columns = {'dt': 'year', 'gini': 'pnadc_gini'})
+    return pnadc_gini
 
 def get_comex(exp_or_imp):
     df = pd.read_csv(rf"C:\Users\danie\Desktop\TCC\Dados\ipeadata_{exp_or_imp}.csv", delimiter=';')
@@ -112,10 +106,12 @@ def get_comex(exp_or_imp):
     df = df[['dt','uf','sg_uf','cd_uf','variable','value']]
     df = df.sort_values(['dt','cd_uf'])
     df.to_excel(rf"C:\Users\danie\Desktop\TCC\Dados\ipeadata_{exp_or_imp}.xlsx",index=False)
-    df[df['dt'].dt.year == 2012].to_excel(rf"C:\Users\danie\Desktop\TCC\Dados\ipeadata_{exp_or_imp}_12.xlsx",index=False)
-    df[df['dt'].dt.year == 2022].to_excel(rf"C:\Users\danie\Desktop\TCC\Dados\ipeadata_{exp_or_imp}_22.xlsx",index=False)
     df = apply_uf_dict(df)
     df['dt'] = df['dt'].astype(str).str[:4]
+    cambio = get_exchange_rate()
+    df = pd.merge(df, cambio, 'left', 'dt')
+    df = df.dropna().reset_index(drop=True)
+    df['value'] = df['value']*df['brl_usd']
     df.name = exp_or_imp
     return df
 
@@ -151,8 +147,8 @@ def get_secex():
 
 def get_dataviva_eci():
     fdf = pd.DataFrame()
-    for file in os.listdir('DATAVIVA'):
-        df = pd.read_csv(f'DATAVIVA/{file}')
+    for file in os.listdir('DATAVIVA/UF'):
+        df = pd.read_csv(f'DATAVIVA/UF/{file}')
         fdf = pd.concat([fdf, df]).reset_index(drop=True)
     fdf = fdf[['Ano','ID IBGE','Localidade','Importações','Exportações','Complexidade Econômica','Diversidade de Produtos',
         'Diversidade Efetiva de Produtos','Diversidade de Destino das Exportações','Diversidade Efetiva de Destino das Exportações']]
@@ -209,7 +205,8 @@ def get_dataviva():
     df['value'] = df['value'].astype(float)
     df = apply_uf_dict(df)
     df['dt'] = df['dt'].astype(str).str[:4]
-    df.name = 'eci'
+    df = df[['dt','sg_uf','value']]
+    df.columns = ['year','sg_uf','eci']
     return df
 
 def download_pop_pnadc():
@@ -249,7 +246,8 @@ def get_pop_pnadc():
     pop_pnadc['cd_uf'] = pop_pnadc['cd_uf'].astype(str)
     pop_pnadc = apply_uf_dict(pop_pnadc)
     pop_pnadc['dt'] = pop_pnadc['dt'].astype(str)
-    pop_pnadc.name = 'pop_pnadc'
+    pop_pnadc = pop_pnadc[['dt','sg_uf','value']]
+    pop_pnadc.columns = ['year','sg_uf','pop_pnadc']
     return pop_pnadc
 
 def get_pop_pnad():
@@ -257,29 +255,32 @@ def get_pop_pnad():
     pop_pnad['cd_uf'] = pop_pnad['cd_uf'].astype(str)
     pop_pnad = apply_uf_dict(pop_pnad)
     pop_pnad['dt'] = pop_pnad['dt'].astype(str)
-    pop_pnad.name = 'pop_pnad'
+    pop_pnad = pop_pnad[['dt','sg_uf','value']]
+    pop_pnad.columns = ['year','sg_uf','pop_pnad']
     return pop_pnad
 
-def download_pib():
-    df = ip.timeseries('PIBPMCE',
-              yearGreaterThan = 1900)
-    df.to_csv(r"C:\Users\danie\Desktop\TCC\Dados\IPEADATA\pib_uf.csv")
-
 def get_pib():
-    df = pd.read_csv(r"C:\Users\danie\Desktop\TCC\Dados\IPEADATA\pib_uf.csv")
-    df.reset_index(inplace=True)
-    df['variable'] = 'pib'
-    df = df[['DATE', 'TERCODIGO', 'variable','VALUE (R$ (mil))']]
-    df.columns = ['dt', 'cd_uf', 'variable','value']
-    df['dt'] = pd.to_datetime(df['dt'], format = '%Y-%m-%d')
-    df['cd_uf'] = df['cd_uf'].astype(str)
-    df['value'] = df['value']*1000
-    df = df[(df['dt'].dt.year >= 1997) & (df['cd_uf'].apply(lambda x:len(x)) == 2)]
-    df.sort_values(['cd_uf','dt'], inplace=True)
-    df = apply_uf_dict(df)
-    df['dt'] = df['dt'].astype(str).str[:4]
-    df.name = 'pib'
-    return df
+    df = pd.read_csv(r"C:\Users\danie\Desktop\TCC\Dados\IPEADATA\pib_corrente_uf.csv", sep = ';')
+    df = df['PIB Estadual - preços de mercado']
+    pib = pd.DataFrame()
+    for i in range(len(df.index)):
+        row = pd.DataFrame(df.index[i])
+        pib = pd.concat([pib,row], axis = 1)
+    pib = pib.T
+    pib = pib.reset_index(drop=True)
+    pib.columns= pib.loc[0]
+    pib = pib.loc[1:]
+    pib = pib.drop(columns = ['Código','Estado'])
+    pib = pd.melt(pib, 'Sigla')
+    pib.columns = ['sg_uf','dt','value']
+    pib['value'] = pib['value'].astype(str)
+    pib['value'] = pib['value'].str.replace(',','.',regex=False)
+    pib['value'] = pib['value'].astype(float)
+    pib['value'] = pib['value']*1000 # unidade original = R$ (mil)
+    pib['dt'] = pib['dt'].astype(str)
+    pib.columns = ['sg_uf','year','pib']
+    pib = pib[['year','sg_uf','pib']]
+    return pib
 
 def download_income_share():
     df = sidrapy.get_table(7545, # Rendimento médio mensal real das pessoas de 14 anos ou mais de idade ocupadas na semana de referência com rendimento de trabalho, efetivamente recebido em todos os trabalhos, a preços médios do ano, por classes simples de percentual das pessoas em ordem crescente de rendimento efetivamente recebido
@@ -321,7 +322,7 @@ def get_uf_cd_uf_dict():
     dct.update(dict(zip(df['uf'], df['sg_uf'])))
     return dct
 
-def get_datasus_gini():
+def get_pnad_gini():
     df = pd.read_csv(r"C:\Users\danie\Desktop\TCC\Dados\DATASUS\gini.csv", encoding='latin1', delimiter=';') # Índice de Gini da renda domiciliar per capita http://tabnet.datasus.gov.br/cgi/idb2011/b09ufa.htm
     ano = df.iloc[2,1:].str.split(' - ').str[0]
     df = df.iloc[3:36,:]
@@ -333,8 +334,8 @@ def get_datasus_gini():
     df = apply_uf_dict(df)
     df['dt'] = df['dt'].astype(str).str[:4]
     df['value'] = df['value'].str.replace(',','.',regex=False).astype(float)
-    df = df[['dt','fonte','sg_uf','variable','value']]
-    df.name = 'datasus_gini'
+    df = df[['dt','sg_uf','value']]
+    df.columns = ['year','sg_uf','pnad_gini']
     return df
 
 def apply_uf_dict(df):
@@ -452,26 +453,9 @@ def get_pop_censo():
     pop_censo['cd_uf'] = pop_censo['cd_uf'].astype(str)
     pop_censo = apply_uf_dict(pop_censo)
     pop_censo['dt'] = pop_censo['dt'].astype(str)
-    pop_censo.name = 'pop_censo'
+    pop_censo = pop_censo[['dt','sg_uf','value']]
+    pop_censo.columns = ['year','sg_uf','pop_censo']
     return pop_censo
-
-def get_data():
-    exp = get_comex('exp')
-    imp = get_comex('imp')
-    pnadc_gini = get_pnadc_gini()
-    microdados_pnad_gini = get_microdados_pnad_gini()
-    microdados_pnadc_gini = get_microdados_pnadc_gini()
-    datasus_gini = get_datasus_gini()
-    gini_rend_med = get_gini_rend_med()
-    eci = get_dataviva()
-    pop_pnadc = get_pop_pnadc()
-    pop_pnad = get_pop_pnad()
-    pop_censo = get_pop_censo()
-    pib = get_pib()
-
-    dfs = [exp, imp, pnadc_gini, microdados_pnad_gini, microdados_pnadc_gini, datasus_gini, gini_rend_med, eci, pop_pnadc, pop_pnad, pop_censo, pib]
-    dados = get_pivot_bd(dfs)
-    dados.to_csv(r"C:\Users\danie\Desktop\TCC\Dados\BASE\basededados_raw.csv", sep = ';', index = False)
 
 def get_adh_anos_est():
     df = pd.read_excel(r"C:\Users\danie\Desktop\TCC\Dados\ADH\ADH_BASE_RADAR_2012-2021.xlsx", sheet_name='TOTAL')
@@ -596,3 +580,89 @@ def get_uf_rca():
     df = calculate_rca(df)
     df = determine_rca(df)
     df.to_csv(r'BASE\tentativa_calculo_rca_uf.csv', sep = ';', index = False)
+
+def load_database() -> pd.DataFrame:
+    return pd.read_csv(r"C:\Users\danie\Desktop\TCC\Dados\BASE\basededados.csv", sep = ';')
+
+def get_exchange_rate():
+    cambio = pd.read_csv(r"C:\Users\danie\Desktop\TCC\Dados\YAHOO\cambio.csv")
+    cambio['Date'] = pd.to_datetime(cambio['Date'], format = '%Y-%m-%d')
+    cambio['year'] = cambio['Date'].dt.year
+    cambio_anos = cambio.groupby(['year'])['Adj Close'].mean().reset_index()
+    cambio_anos.columns = ['dt','brl_usd']
+    cambio_anos['dt'] = cambio_anos['dt'].astype(str)
+    return cambio_anos
+
+def get_monthly_exchange_rate():
+    cambio = pd.read_csv(r"C:\Users\danie\Desktop\TCC\Dados\YAHOO\cambio.csv")
+    cambio['Date'] = pd.to_datetime(cambio['Date'], format = '%Y-%m-%d')
+    cambio['year'] = cambio['Date'].dt.year
+    cambio['month'] = cambio['Date'].dt.month
+    cambio_meses = cambio.groupby(['year','month'])['Adj Close'].mean().reset_index()
+    cambio_meses.columns = ['year','month','brl_usd']
+    cambio_meses['year'] = cambio_meses['year'].astype(str)
+    cambio_meses['month'] = cambio_meses['month'].astype(str)
+    cambio_meses['usd_brl'] = 1/cambio_meses['brl_usd']
+    return cambio_meses
+
+def get_mun_exp_monthly_brl():
+    exp = pd.DataFrame()
+    path = r'C:\Users\danie\Desktop\TCC\Dados\SECEX\Mensal'
+    for file in os.listdir(path):
+        if 'exp' in file:
+            sub_exp = pd.read_csv(os.path.join(path,file), encoding = 'utf-8', sep = ';')
+            exp = pd.concat([exp,sub_exp])
+
+    exp.columns = ['year','month','municipio','exp_usd']
+    exp = exp[['year','month','municipio','exp_usd']]
+    split = exp['municipio'].str.split(' - ')
+    exp['municipio'] = split.str[0]
+    exp['sg_uf'] = split.str[1]
+    exp['year'] = exp['year'].astype(str)
+    exp['month'] = exp['month'].astype(str)
+
+    cambio = get_monthly_exchange_rate()
+    exp = pd.merge(exp, cambio, 'left', ['year','month'])
+    exp['exp_brl'] = exp['exp_usd']*exp['brl_usd']
+    exp = exp.groupby(['year','sg_uf','municipio'])['exp_brl'].sum().reset_index()
+
+    exp.to_csv(r'C:\Users\danie\Desktop\TCC\Dados\SECEX\mun_exp_monthly_brl.csv', sep = ';', index = False, decimal = ',', encoding = 'latin1')
+    return exp
+
+def get_mun_imp_monthly_brl():
+    imp = pd.DataFrame()
+    path = r'C:\Users\danie\Desktop\TCC\Dados\SECEX\Mensal'
+    for file in os.listdir(path):
+        if 'imp' in file:
+            sub_imp = pd.read_csv(os.path.join(path,file), encoding = 'utf-8', sep = ';')
+            imp = pd.concat([imp,sub_imp])
+
+    imp.columns = ['year','month','municipio','imp_usd']
+    imp = imp[['year','month','municipio','imp_usd']]
+    split = imp['municipio'].str.split(' - ')
+    imp['municipio'] = split.str[0]
+    imp['sg_uf'] = split.str[1]
+    imp['year'] = imp['year'].astype(str)
+    imp['month'] = imp['month'].astype(str)
+
+    cambio = get_monthly_exchange_rate()
+    imp = pd.merge(imp, cambio, 'left', ['year','month'])
+    imp['imp_brl'] = imp['imp_usd']*imp['brl_usd']
+    imp = imp.groupby(['year','sg_uf','municipio'])['imp_brl'].sum().reset_index()
+
+    imp.to_csv(r'C:\Users\danie\Desktop\TCC\Dados\SECEX\mun_imp_monthly_brl.csv', sep = ';', index = False, decimal = ',', encoding = 'latin1')
+    return imp
+
+def get_uf_exp_monthly_brl():
+    mun_exp = get_mun_exp_monthly_brl()
+    mun_exp = mun_exp.rename(columns = {'exp_brl': 'exp'})
+    exp = mun_exp.groupby(['sg_uf','year'])['exp'].sum().reset_index()
+    exp.to_csv(r'C:\Users\danie\Desktop\TCC\Dados\SECEX\uf_exp_monthly_brl.csv', sep = ';', index = False, decimal = ',', encoding = 'latin1')
+    return exp
+
+def get_uf_imp_monthly_brl():
+    mun_imp = get_mun_imp_monthly_brl()
+    mun_imp = mun_imp.rename(columns = {'imp_brl': 'imp'})
+    imp = mun_imp.groupby(['sg_uf','year'])['imp'].sum().reset_index()
+    imp.to_csv(r'C:\Users\danie\Desktop\TCC\Dados\SECEX\uf_imp_monthly_brl.csv', sep = ';', index = False, decimal = ',', encoding = 'latin1')
+    return imp
