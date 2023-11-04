@@ -6,10 +6,19 @@ import numpy as np
 from matplotlib.colors import SymLogNorm
 from matplotlib.colors import LinearSegmentedColormap
 
-def get_charts():
+def charts():
+    mun = load_mun_database()
+    mun_gdf = gpd.read_file(r"C:\Users\danie\Desktop\TCC\Dados\graficos\bra_mun.json")
+    df = pd.merge(mun_gdf, mun, 'left', 'id')
+    uf_gdf = gpd.read_file(r"C:\Users\danie\Desktop\Biomas\MAP\bra_uf.json")
+
+    for variable in ['eci', 'gini', 'trade_pib']:
+        fig = get_mun_fig(df, uf_gdf, variable)
+        save_mun_fig(fig, variable)
+
     uf = get_uf_dataframe()
     for variable in ['eci', 'gini', 'trade_pib']:
-        for dt in [2006, 2020]:
+        for dt in [2012, 2020]:
             fig = get_uf_fig(uf, dt, variable)
             save_uf_fig(fig, variable, dt)
 
@@ -95,3 +104,36 @@ def get_uf_dataframe():
     df['id'] = df['id'].replace(dct)
     uf = pd.merge(gdf, df, 'left', 'id')
     return uf
+
+def lorenz_curve(X):
+    X_lorenz = X.cumsum() / X.sum()
+    X_lorenz = np.insert(X_lorenz, 0, 0) 
+    X_lorenz[0], X_lorenz[-1]
+    return X_lorenz
+
+def gini_calculation():
+    income = np.array([10, 20, 50, 100, 200, 500, 1000])
+    sorted_income = np.sort(income)
+
+    lorenz = lorenz_curve(sorted_income)
+
+
+    fig, ax = plt.subplots(figsize=[10,8])
+    ax.scatter(np.arange(lorenz.size)/(lorenz.size-1), lorenz, 
+            color='blue', label='Curva de Lorenz')
+
+    ax.plot([0,1], [0,1], color='k', label='Linha de perfeita igualdade')
+
+    ax.fill_between(np.arange(lorenz.size)/(lorenz.size-1), lorenz, 
+                    np.linspace(0, 1, len(lorenz)), color='skyblue', alpha=0.5)
+
+    gini = 1 - 2 * np.trapz(lorenz)
+
+    ax.set_xlabel("Parcela cumulativa da população", fontsize=14)
+    ax.set_ylabel("Parcela cumulativa da renda", fontsize=14)
+    ax.legend(fontsize=30)
+    ax.tick_params(labelsize=10)
+    ax.legend()
+    plt.tight_layout()
+    plt.show()
+    fig.savefig(r'C:\Users\danie\Desktop\TCC\Dados\graficos\gini.png', format='png', dpi=300, transparent = True, bbox_inches='tight')
