@@ -6,7 +6,12 @@ from matplotlib.font_manager import FontProperties
 import math
 from linearmodels.panel import PanelOLS
 from linearmodels.panel.results import PanelResults
-from tabulate import tabulate
+
+def mun_analise():
+    get_data()
+    df = load_database()
+    get_descriptive_stats(df)
+    get_results_table(df)
 
 def get_data():
     df = load_raw_database()
@@ -49,10 +54,13 @@ def load_database() -> pd.DataFrame:
     return pd.read_csv(r"C:\Users\danie\Desktop\TCC\Dados\BASE\base_mun.csv", sep = ';', decimal = '.', encoding = 'latin1')
 
 def get_descriptive_stats(df: pd.DataFrame) -> pd.DataFrame:
-    desc_stats = df[['gini','eci','exp_pib','imp_pib','trade_pib','exp_pib_eci','imp_pib_eci','trade_pib_eci','pmpob','e_anosestudo','lpib','lpop']].describe().T[['count','mean','std','50%','min','max']]
+    desc_stats = df[['gini','eci','exp_pib','imp_pib','trade_pib','pib_pc','pop','e_anosestudo']].copy()
+    desc_stats['pib_pc'] = desc_stats['pib_pc']/1000
+    desc_stats['pop'] = desc_stats['pop']/1000
+    desc_stats = desc_stats.describe().T[['count','mean','std','50%','min','max']]
     desc_stats['count'] = desc_stats['count'].apply(lambda x:round(x))
     desc_stats = desc_stats.round(4)
-    desc_stats.index = ['Gini','ICE','Exportações','Importações','Comércio','Exportações * ECI','Importações * ECI','Comércio * ECI','Proporção de pobres','Anos de estudo','Ln(PIB)','Ln(População)']
+    desc_stats.index = ['Gini','ICE','Exportações','Importações','Comércio','PIB per capita','População','Anos de estudo']
     desc_stats.columns = ['Observações','Média','Desvio Padrão','Mediana','Mínimo','Máximo']
     desc_stats = desc_stats.reset_index(names='Variável')
     desc_stats = desc_stats.astype(str)
@@ -63,25 +71,25 @@ def get_descriptive_stats(df: pd.DataFrame) -> pd.DataFrame:
 
 def get_results_table(df: pd.DataFrame) -> pd.DataFrame:
     # reg gini eci trade_pib  lpib  lpop e_anosestudo  pmpob, robust
-    X = df[['eci', 'trade_pib', 'lpib', 'lpop', 'e_anosestudo', 'pmpob']]
+    X = df[['eci', 'trade_pib', 'pib_pc', 'lpop', 'e_anosestudo']]
     X = sm.add_constant(X)  # Adds a constant (intercept) to the model
     mod1 = sm.OLS(df['gini'], X)
     res1 = mod1.fit(cov_type='HC1')
 
     # reg gini eci trade_pib trade_pib_eci  lpib  lpop e_anosestudo  pmpob, robust
-    X = df[['eci', 'trade_pib', 'trade_pib_eci', 'lpib', 'lpop', 'e_anosestudo', 'pmpob']]
+    X = df[['eci', 'trade_pib', 'trade_pib_eci', 'pib_pc', 'lpop', 'e_anosestudo']]
     X = sm.add_constant(X)
     mod2 = sm.OLS(df['gini'], X)
     res2 = mod2.fit(cov_type='HC1') 
 
     # reg gini eci exp_pib exp_pib_eci  lpib  lpop e_anosestudo  pmpob, robust
-    X = df[['eci', 'exp_pib', 'exp_pib_eci', 'lpib', 'lpop', 'e_anosestudo', 'pmpob']]
+    X = df[['eci', 'exp_pib', 'exp_pib_eci', 'pib_pc', 'lpop', 'e_anosestudo']]
     X = sm.add_constant(X)
     mod3 = sm.OLS(df['gini'], X)
     res3 = mod3.fit(cov_type='HC1')
 
     # reg gini eci imp_pib imp_pib_eci  lpib  lpop e_anosestudo  pmpob, robust
-    X = df[['eci', 'imp_pib', 'imp_pib_eci', 'lpib', 'lpop', 'e_anosestudo', 'pmpob']]
+    X = df[['eci', 'imp_pib', 'imp_pib_eci', 'pib_pc', 'lpop', 'e_anosestudo']]
     X = sm.add_constant(X)
     mod4 = sm.OLS(df['gini'], X)
     res4 = mod4.fit(cov_type='HC1')
@@ -96,12 +104,12 @@ def get_results_table(df: pd.DataFrame) -> pd.DataFrame:
                                         'trade_pib_eci': 'Comércio * ECI',
                                         'trade_pib': 'Comércio',
                                         'lpib': 'Ln(PIB)',
+                                        'pib_pc': 'PIB per capita',
                                         'lpop': 'Ln(População)',
                                         'exp_pib': 'Exportações',
                                         'imp_pib': 'Importações',
                                         'exp_pib_eci': 'Exportações * ECI',
                                         'imp_pib_eci': 'Importações * ECI',
-                                        'pmpob': 'Proporção de pobres',
                                         'e_anosestudo': 'Anos de estudo',
                                         'const': 'Constante'
                                         })
@@ -130,10 +138,10 @@ def get_results_table(df: pd.DataFrame) -> pd.DataFrame:
                         'Exportações * ECI',
                         'Importações * ECI',
                         'Comércio * ECI',
-                        'Proporção de pobres',
-                        'Anos de estudo',
                         'Ln(PIB)',
+                        'PIB per capita',
                         'Ln(População)',
+                        'Anos de estudo',
                         'R²'] if i in res_table.columns]
     res_table = res_table[cols]
     res_table = res_table.applymap(lambda x:str(x))
