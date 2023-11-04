@@ -11,22 +11,22 @@ import requests
 import numpy as np
 import basedosdados as bd
 
-def get_data():
+def uf():
     exp = get_uf_exp_monthly_brl()
     imp = get_uf_imp_monthly_brl()
 
     pnadc_gini = get_pnadc_gini()
-    pnad_gini = get_pnad_gini()
+    theil = get_adh_theil()
 
     eci = get_dataviva()
 
     pop_pnadc = get_pop_pnadc()
-    pop_pnad = get_pop_pnad()
-    pop_censo = get_pop_censo()
 
     pib = get_pib()
+    pib_2010 = get_pib_2010()
+    anos_est = get_adh_anos_est()
 
-    dfs = [exp, imp, pnadc_gini, pnad_gini, eci, pop_pnadc, pop_pnad, pop_censo, pib]
+    dfs = [exp, imp, pnadc_gini, theil,eci, pop_pnadc, pib,pib_2010, anos_est]
 
     for i,d in enumerate(dfs):
         d['year'] = d['year'].astype(str)
@@ -35,6 +35,7 @@ def get_data():
         else:
             df = pd.merge(df,d,'left',['year','sg_uf'])
 
+    df = df.dropna(axis = 0).reset_index(drop=True)
     df.to_csv(r"C:\Users\danie\Desktop\TCC\Dados\BASE\basededados_raw.csv", sep = ';', index = False, decimal = ',')
 
 def get_pivot_bd(dfs):
@@ -282,6 +283,29 @@ def get_pib():
     pib = pib[['year','sg_uf','pib']]
     return pib
 
+def get_pib_2010():
+    df = pd.read_csv(r"C:\Users\danie\Desktop\TCC\Dados\IPEADATA\pib_precos_2010_uf.csv", sep = ';')
+    df = df['PIB Estadual - preços de mercado (preços de 2010)']
+    pib_2010 = pd.DataFrame()
+    for i in range(len(df.index)):
+        row = pd.DataFrame(df.index[i])
+        pib_2010 = pd.concat([pib_2010,row], axis = 1)
+    pib_2010 = pib_2010.T
+    pib_2010 = pib_2010.reset_index(drop=True)
+    pib_2010.columns= pib_2010.loc[0]
+    pib_2010 = pib_2010.loc[1:]
+    pib_2010 = pib_2010.drop(columns = ['Código','Estado'])
+    pib_2010 = pd.melt(pib_2010, 'Sigla')
+    pib_2010.columns = ['sg_uf','dt','value']
+    pib_2010['value'] = pib_2010['value'].astype(str)
+    pib_2010['value'] = pib_2010['value'].str.replace(',','.',regex=False)
+    pib_2010['value'] = pib_2010['value'].astype(float)
+    pib_2010['value'] = pib_2010['value']*1000 # unidade original = R$ (mil)
+    pib_2010['dt'] = pib_2010['dt'].astype(str)
+    pib_2010.columns = ['sg_uf','year','pib_2010']
+    pib_2010 = pib_2010[['year','sg_uf','pib_2010']]
+    return pib_2010
+
 def download_income_share():
     df = sidrapy.get_table(7545, # Rendimento médio mensal real das pessoas de 14 anos ou mais de idade ocupadas na semana de referência com rendimento de trabalho, efetivamente recebido em todos os trabalhos, a preços médios do ano, por classes simples de percentual das pessoas em ordem crescente de rendimento efetivamente recebido
                     3, 
@@ -460,14 +484,12 @@ def get_pop_censo():
 def get_adh_anos_est():
     df = pd.read_excel(r"C:\Users\danie\Desktop\TCC\Dados\ADH\ADH_BASE_RADAR_2012-2021.xlsx", sheet_name='TOTAL')
     df = df[['ANO','AGREGACAO','NOME','ANOSEST']]
-    df.columns = ['dt', 'level_local', 'uf', 'adh_anos_est']
+    df.columns = ['year', 'level_local', 'uf', 'anos_est']
     df = df.query("level_local == 'UF'").copy().reset_index(drop=True)
     df = df.drop(columns = ['level_local'])
-    df['nm_variable'] = 'adh_anos_est'
-    df = df.rename(columns = {'adh_anos_est': 'value'})
-    df['dt'] = df['dt'].astype(str)
+    df['year'] = df['year'].astype(str)
     df = apply_uf_dict(df)
-    df.name = 'adh_anos_est'
+    df = df[['year','sg_uf','anos_est']]
     return df
 
 def get_adh_gini():
@@ -486,14 +508,12 @@ def get_adh_gini():
 def get_adh_theil():
     df = pd.read_excel(r"C:\Users\danie\Desktop\TCC\Dados\ADH\ADH_BASE_RADAR_2012-2021.xlsx", sheet_name='TOTAL')
     df = df[['ANO','AGREGACAO','NOME','THEIL']]
-    df.columns = ['dt', 'level_local', 'uf', 'adh_theil']
+    df.columns = ['year', 'level_local', 'uf', 'theil']
     df = df.query("level_local == 'UF'").copy().reset_index(drop=True)
     df = df.drop(columns = ['level_local'])
-    df['nm_variable'] = 'adh_theil'
-    df = df.rename(columns = {'adh_theil': 'value'})
-    df['dt'] = df['dt'].astype(str)
+    df['year'] = df['year'].astype(str)
     df = apply_uf_dict(df)
-    df.name = 'adh_theil'
+    df = df[['year','sg_uf','theil']]
     return df
 
 def calculate_yearly_rca(df: pd, year: str) -> pd.DataFrame:
