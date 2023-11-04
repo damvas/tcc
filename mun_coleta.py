@@ -1,5 +1,36 @@
 import pandas as pd
 
+def mun():
+    df = pd.read_csv(r'C:\Users\danie\Desktop\TCC\Dados\ADH\mun_2010.csv', sep = ';', encoding = 'latin1', decimal = ',')
+    df['pmpob'] = df['pmpob']/100
+
+    pib = get_pib()
+    df['id'] = df['id'].astype(str)
+    df = pd.merge(df, pib, 'left', 'id')
+    df = df.drop(columns = 'mun')
+
+    eci = get_eci()
+    df = pd.merge(df, eci, 'left', 'id')
+    df = df.drop(columns = 'mun')
+
+    cambio = get_exchange_rate()
+    exp = get_exp()
+    exp = convert_exp(exp, cambio)
+    df = pd.merge(df,exp,'left',['municipio','sg_uf'])
+
+    imp = get_imp()
+    imp = convert_imp(imp, cambio)
+    df = pd.merge(df,imp,'left',['municipio','sg_uf'])
+
+    df = df.reset_index(drop=True)
+    df = df.rename(columns = {'exp_brl': 'exp', 'imp_brl': 'imp', 'pib_brl': 'pib', 'pesotot': 'pop'})
+    df['exp'] = df['exp'].fillna(0)
+    df['imp'] = df['imp'].fillna(0)
+    df = df.query("eci.notna()").reset_index(drop=True)
+
+    df = df[['sg_uf','uf','municipio','id'] + [col for col in df.columns if col not in ['id','uf','sg_uf','municipio']]]
+    df.to_csv(r'C:\Users\danie\Desktop\TCC\Dados\BASE\base_mun_raw.csv', index = False, sep = ';', decimal = ',', encoding = 'latin1')
+
 def get_data():
     df = pd.read_csv(r'C:\Users\danie\Desktop\TCC\Dados\ADH\mun_2010.csv', sep = ';', encoding = 'latin1', decimal = ',')
     df['pmpob'] = df['pmpob']/100
