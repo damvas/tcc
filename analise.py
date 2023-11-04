@@ -8,6 +8,12 @@ from linearmodels.panel import PanelOLS
 from linearmodels.panel.results import PanelResults
 from tabulate import tabulate
 
+def analise():
+    get_data()
+    df = load_database()
+    get_descriptive_stats(df)
+    get_results_table(df)
+
 def get_data():
     df = load_raw_database()
     df = get_additional_variables(df)
@@ -16,17 +22,16 @@ def get_data():
 
 def load_raw_database() -> pd.DataFrame:
 
-    df = pd.read_csv(r"C:\Users\danie\Desktop\TCC\Dados\BASE\basededados_raw.csv", sep = ';', decimal = '.', encoding = 'latin1')
+    df = pd.read_csv(r"C:\Users\danie\Desktop\TCC\Dados\BASE\basededados_raw.csv", sep = ';', decimal = ',', encoding = 'latin1')
 
     return df
 
 def get_additional_variables(df: pd.DataFrame) -> pd.DataFrame:
 
-    df = df.drop(columns = 'pnad_gini')
     df = df.rename(columns = {'pnadc_gini': 'gini',
                         'pop_pnadc': 'pop',
                         'year': 'dt'})
-    df['pib_pc'] = df['pib']/df['pop']
+    df['pib_pc'] = df['pib_2010']/df['pop']
     df['exp_pib'] = df['exp']/df['pib']
     df['imp_pib'] = df['imp']/df['pib']
     df['trade'] = df['imp']+df['exp']
@@ -56,10 +61,13 @@ def get_gini_corr(df: pd.DataFrame) -> float:
     return df.query("pnadc_gini.notna() & pnad_gini.notna()")[['pnadc_gini','pnad_gini']].corr()['pnadc_gini'].iloc[1]
 
 def get_descriptive_stats(df: pd.DataFrame) -> pd.DataFrame:
-    desc_stats = df[['gini','eci','exp_pib','imp_pib','trade_pib','exp_pib_eci','imp_pib_eci','trade_pib_eci','lpib','lpop']].describe().T[['count','mean','std','50%','min','max']]
+    desc_stats = df[['gini','eci','exp_pib','imp_pib','trade_pib','pib_pc','pop','anos_est']].copy()
+    desc_stats['pib_pc'] = desc_stats['pib_pc']/1000
+    desc_stats['pop'] = desc_stats['pop']/1000000
+    desc_stats = desc_stats.describe().T[['count','mean','std','50%','min','max']]
     desc_stats['count'] = desc_stats['count'].apply(lambda x:round(x))
     desc_stats = desc_stats.round(4)
-    desc_stats.index = ['Gini','ICE','Exportações','Importações','Comércio','Exportações * ECI','Importações * ECI','Comércio * ECI','Ln(PIB)','Ln(População)']
+    desc_stats.index = ['Gini','ICE','Exportações','Importações','Comércio','PIB per capita','População','Anos de Estudo']
     desc_stats.columns = ['Observações','Média','Desvio Padrão','Mediana','Mínimo','Máximo']
     desc_stats = desc_stats.reset_index(names='Variável')
     desc_stats = desc_stats.astype(str)
@@ -73,13 +81,13 @@ def get_results_table(df: pd.DataFrame) -> pd.DataFrame:
     df['const'] = 1
 
     # reghdfe gini eci trade_pib  pib  lpop , a(sg_uf dt) cluster(sg)
-    mod1 = PanelOLS.from_formula('gini ~ eci + trade_pib + lpib + lpop + EntityEffects + TimeEffects', data=df)
+    mod1 = PanelOLS.from_formula('gini ~ eci + trade_pib + pib_pc + lpop + anos_est + EntityEffects + TimeEffects', data=df)
     res1 = mod1.fit(cov_type='clustered', cluster_entity=True)
     # reghdfe gini eci trade_pib trade_pib_eci pib  lpop , a(sg_uf dt) cluster(sg)
-    mod2 = PanelOLS.from_formula('gini ~ eci + trade_pib + trade_pib_eci + lpib + lpop + EntityEffects + TimeEffects', data=df)
+    mod2 = PanelOLS.from_formula('gini ~ eci + trade_pib + trade_pib_eci + pib_pc + lpop + anos_est + EntityEffects + TimeEffects', data=df)
     res2 = mod2.fit(cov_type='clustered', cluster_entity=True)
     # reghdfe gini eci exp_pib_eci exp_pib imp_pib_eci imp_pib pib  lpop , a(sg_uf dt) cluster(sg)
-    mod3 = PanelOLS.from_formula('gini ~ eci + exp_pib_eci + exp_pib + imp_pib_eci + imp_pib + lpib + lpop + EntityEffects + TimeEffects', data=df)
+    mod3 = PanelOLS.from_formula('gini ~ eci + exp_pib_eci + exp_pib + imp_pib_eci + imp_pib + pib_pc + lpop + anos_est + EntityEffects + TimeEffects', data=df)
     res3 = mod3.fit(cov_type='clustered', cluster_entity=True)
 
     res_table = pd.DataFrame()
@@ -92,6 +100,8 @@ def get_results_table(df: pd.DataFrame) -> pd.DataFrame:
                                         'trade_pib_eci': 'Comércio * ECI',
                                         'trade_pib': 'Comércio',
                                         'lpib': 'Ln(PIB)',
+                                        'pib_pc': 'PIB per capita',
+                                        'anos_est': 'Anos de Estudo',
                                         'lpop': 'Ln(População)',
                                         'exp_pib': 'Exportações',
                                         'imp_pib': 'Importações',
@@ -120,8 +130,10 @@ def get_results_table(df: pd.DataFrame) -> pd.DataFrame:
             'Exportações * ECI',
             'Importações * ECI',
             'Comércio * ECI',
+            'PIB per capita',
             'Ln(PIB)',
             'Ln(População)',
+            'Anos de Estudo',
             'R²'] if i in res_table.columns]
     res_table = res_table[ [''] + cols]
     res_table = res_table.applymap(lambda x:str(x))
